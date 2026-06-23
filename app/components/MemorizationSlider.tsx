@@ -206,12 +206,7 @@ function WordInput({
         if (pos >= correctLen) return;
         const newSlots = s.slice(0, pos) + e.key + s.slice(pos + 1);
         onChange(newSlots);
-        const nextPos = Math.min(pos + 1, correctLen);
-        moveCursor(nextPos);
-        // Auto-advance only when the user types the last slot sequentially.
-        // Mid-word edits (pos < correctLen - 1) never jump to the next word,
-        // regardless of whether the word is now fully filled.
-        if (pos === correctLen - 1 && !newSlots.includes(" ")) setTimeout(onComplete, 60);
+        moveCursor(Math.min(pos + 1, correctLen));
         return;
       }
     },
