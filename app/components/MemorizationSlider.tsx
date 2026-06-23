@@ -419,8 +419,16 @@ export default function MemorizationSlider() {
               <BookOpen className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-stone-900 leading-tight">Bible Bee</h1>
+              <h1 className="text-base font-bold text-stone-900 leading-tight">Bible Bee & Mena Bet</h1>
               <p className="text-xs text-stone-500 leading-tight">Scripture Memorization</p>
+            </div>
+            <div className="ml-auto">
+              <a
+                href="mailto:nathandaniel2222@gmail.com"
+                className="text-xs font-medium text-stone-500 hover:text-indigo-600 transition"
+              >
+                Contact Us
+              </a>
             </div>
           </div>
         </header>
@@ -623,9 +631,15 @@ export default function MemorizationSlider() {
           </section>
         </main>
 
-        <footer className="border-t border-stone-200 py-6 text-center">
+        <footer className="border-t border-stone-200 py-6 text-center space-y-1">
           <p className="text-xs text-stone-400">
             National Bible Bee · Scripture Memorization Tool
+          </p>
+          <p className="text-xs text-stone-400">
+            For any comments reach out to{" "}
+            <a href="mailto:nathandaniel2222@gmail.com" className="underline hover:text-stone-600 transition">
+              nathandaniel2222@gmail.com
+            </a>
           </p>
         </footer>
       </div>
