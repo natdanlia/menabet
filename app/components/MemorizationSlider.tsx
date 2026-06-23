@@ -40,7 +40,7 @@ const VERSIONS: { value: BibleVersion; label: string }[] = [
 const LEVEL_LABELS = ["Full Text", "25% Hidden", "50% Hidden", "75% Hidden", "100% Hidden"];
 const LEVEL_COLORS = ["bg-emerald-500", "bg-teal-500", "bg-sky-500", "bg-indigo-500", "bg-violet-500"];
 
-const MONO = "var(--font-inter), Inter, sans-serif";
+const MONO = "'Courier New', Courier, monospace";
 
 function splitToken(token: string): { pre: string; core: string; post: string } {
   const m = token.match(/^([^a-zA-Z0-9]*)([a-zA-Z0-9''\-]*)([^a-zA-Z0-9]*)$/);
@@ -434,20 +434,17 @@ export default function MemorizationSlider() {
           </section>
 
           {/* Erasure Level */}
-          <section className="rounded-2xl border border-stone-200 bg-white shadow-sm px-6 py-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">Erasure Level</p>
-                <p className="text-sm font-semibold text-stone-700 mt-0.5">
-                  Level {level + 1} — {LEVEL_LABELS[level]}
-                </p>
-              </div>
-              <div className="flex gap-2">
+          <section className="rounded-2xl border border-stone-200 bg-white shadow-sm px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-stone-600">
+                Level {level + 1} — <span className="text-indigo-600">{LEVEL_LABELS[level]}</span>
+              </p>
+              <div className="flex gap-1.5">
                 <button
                   onClick={() => handleLevelChange(0)}
-                  className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-600 hover:bg-stone-100 transition"
+                  className="flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1 text-xs font-medium text-stone-600 hover:bg-stone-100 transition"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-3 w-3" />
                   Reset
                 </button>
                 <button
@@ -458,7 +455,7 @@ export default function MemorizationSlider() {
                   onTouchEnd={() => setIsRevealing(false)}
                   disabled={level === 0}
                   className={[
-                    "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition select-none",
+                    "flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition select-none",
                     level === 0
                       ? "border-stone-100 bg-stone-50 text-stone-300 cursor-not-allowed"
                       : isRevealing
@@ -466,18 +463,18 @@ export default function MemorizationSlider() {
                       : "border-stone-200 bg-stone-50 text-stone-600 hover:bg-stone-100",
                   ].join(" ")}
                 >
-                  {isRevealing ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                  {isRevealing ? "Revealing" : "Hold to Peek"}
+                  {isRevealing ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                  Peek
                 </button>
               </div>
             </div>
 
-            <div className="flex gap-1.5 mb-2">
+            <div className="flex gap-1 mb-1.5">
               {[0, 1, 2, 3, 4].map((l) => (
                 <button
                   key={l}
                   onClick={() => handleLevelChange(l)}
-                  className={`flex-1 h-2 rounded-full transition-all duration-200 ${
+                  className={`flex-1 h-1.5 rounded-full transition-all duration-200 ${
                     l <= level ? LEVEL_COLORS[level] : "bg-stone-200 hover:bg-stone-300"
                   }`}
                 />
@@ -489,15 +486,22 @@ export default function MemorizationSlider() {
               className="w-full accent-indigo-600 cursor-pointer"
             />
             <div className="flex justify-between mt-1">
-              {LEVEL_LABELS.map((label, i) => (
+              {[
+                { n: 1, label: "Full text" },
+                { n: 2, label: "25% hidden" },
+                { n: 3, label: "50% hidden" },
+                { n: 4, label: "75% hidden" },
+                { n: 5, label: "All hidden" },
+              ].map(({ n, label }, i) => (
                 <button
                   key={i}
                   onClick={() => handleLevelChange(i)}
-                  className={`text-xs transition ${
-                    i === level ? "font-semibold text-indigo-600" : "text-stone-400 hover:text-stone-600"
+                  className={`flex flex-col items-center gap-0.5 transition ${
+                    i === level ? "text-indigo-600" : "text-stone-400 hover:text-stone-600"
                   }`}
                 >
-                  {i + 1}
+                  <span className={`text-xs font-bold ${i === level ? "" : ""}`}>{n}</span>
+                  <span className="text-[9px] leading-tight text-center whitespace-nowrap">{label}</span>
                 </button>
               ))}
             </div>
@@ -542,7 +546,7 @@ export default function MemorizationSlider() {
               {verseText ? (
                 <div
                   className="text-xl sm:text-2xl leading-loose text-stone-800"
-                  style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
+                  style={{ fontFamily: "var(--font-lora), Georgia, serif", wordSpacing: "0.18em" }}
                 >
                   {tokens.map((token, i) => {
                     const { pre, core, post } = splitToken(token);
@@ -603,22 +607,6 @@ export default function MemorizationSlider() {
                 </div>
               )}
             </div>
-          </section>
-
-          {/* Level guide cards */}
-          <section className="grid grid-cols-5 gap-2">
-            {LEVEL_LABELS.map((label, i) => (
-              <button
-                key={i}
-                onClick={() => handleLevelChange(i)}
-                className={`rounded-xl p-3 text-center transition border ${
-                  i === level ? "border-indigo-200 bg-indigo-50 shadow-sm" : "border-stone-200 bg-white hover:bg-stone-50"
-                }`}
-              >
-                <p className={`text-xl font-bold ${i === level ? "text-indigo-600" : "text-stone-400"}`}>{i + 1}</p>
-                <p className="text-xs font-medium mt-0.5 leading-tight text-stone-500">{label}</p>
-              </button>
-            ))}
           </section>
 
           {/* How to use */}
