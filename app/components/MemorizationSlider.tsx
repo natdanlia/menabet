@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
-import { BookOpen, RotateCcw, Eye, EyeOff, ChevronDown, PartyPopper } from "lucide-react";
+import { BookOpen, RotateCcw, Eye, EyeOff, PartyPopper } from "lucide-react";
 import versesData from "@/data/verses.json";
 
 type Division = keyof typeof versesData;
 type BibleVersion = "esv" | "kjv" | "nkjv" | "nasb" | "niv";
+type PassageType = "navigate" | "explore";
 
-interface WeekData {
+interface PassageData {
   reference: string;
   esv: string;
   kjv: string;
@@ -16,27 +17,30 @@ interface WeekData {
   niv: string;
 }
 
+interface UnitData {
+  navigate: PassageData;
+  explore?: PassageData;
+}
+
 const DIVISIONS: { value: Division; label: string }[] = [
   { value: "beginner", label: "Beginner" },
-  { value: "primary", label: "Primary" },
-  { value: "junior", label: "Junior" },
-  { value: "senior", label: "Senior" },
+  { value: "primary",  label: "Primary" },
+  { value: "junior",   label: "Junior" },
+  { value: "senior",   label: "Senior" },
 ];
 
 const VERSIONS: { value: BibleVersion; label: string }[] = [
-  { value: "esv", label: "ESV" },
-  { value: "kjv", label: "KJV" },
+  { value: "esv",  label: "ESV" },
+  { value: "kjv",  label: "KJV" },
   { value: "nkjv", label: "NKJV" },
   { value: "nasb", label: "NASB" },
-  { value: "niv", label: "NIV" },
+  { value: "niv",  label: "NIV" },
 ];
 
 const LEVEL_LABELS = ["Full Text", "25% Hidden", "50% Hidden", "75% Hidden", "100% Hidden"];
 const LEVEL_COLORS = ["bg-emerald-500", "bg-teal-500", "bg-sky-500", "bg-indigo-500", "bg-violet-500"];
 
-// Monospace font stack — every character is exactly the same width.
-// This fixes "mm" crowding and "W" overflow regardless of the verse font.
-const MONO = "'Courier New', Courier, monospace";
+const MONO = "var(--font-inter), Inter, sans-serif";
 
 function splitToken(token: string): { pre: string; core: string; post: string } {
   const m = token.match(/^([^a-zA-Z0-9]*)([a-zA-Z0-9''\-]*)([^a-zA-Z0-9]*)$/);
@@ -61,7 +65,6 @@ function Caret() {
         height: "1.1em",
         backgroundColor: "#6366f1",
         verticalAlign: "text-bottom",
-        // Negative margins so the caret takes no layout space between slots
         marginLeft: "-0.75px",
         marginRight: "-0.75px",
         borderRadius: "1px",
@@ -96,20 +99,15 @@ function WordInput({
   registerFocusAt: (fn: (pos: number) => void) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [focused, setFocused]   = useState(false);
+  const [focused, setFocused]     = useState(false);
   const [cursorPos, setCursorPos] = useState(0);
 
-  // Normalize value to a fixed-length padded string.
-  // Each index maps 1-to-1 with a slot; " " (space) means the slot is empty.
-  // This prevents characters shifting when deleting or inserting mid-word.
   const slots = (value + " ".repeat(correct.length)).slice(0, correct.length);
 
-  // Stable refs so callbacks never go stale
-  const slotsRef    = useRef(slots);   slotsRef.current    = slots;
-  const cursorRef   = useRef(cursorPos); cursorRef.current = cursorPos;
-  const correctLen  = correct.length;
+  const slotsRef   = useRef(slots);   slotsRef.current   = slots;
+  const cursorRef  = useRef(cursorPos); cursorRef.current = cursorPos;
+  const correctLen = correct.length;
 
-  // ── Native focus tracking (reliable for programmatic .focus() calls) ──────
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -120,87 +118,60 @@ function WordInput({
     return () => { el.removeEventListener("focus", onIn); el.removeEventListener("blur", onOut); };
   }, []);
 
-  // ── Stable focusAt exposed to parent for cross-word navigation ───────────
   const focusAt = useCallback((pos: number) => {
     const el = inputRef.current;
     if (!el) return;
     el.focus();
-    // With a padded string, length === correctLen always, so pos is always valid.
-    setTimeout(() => {
-      el.setSelectionRange(pos, pos);
-      setCursorPos(pos);
-    }, 0);
-  }, []); // stable — reads slots through ref
+    setTimeout(() => { el.setSelectionRange(pos, pos); setCursorPos(pos); }, 0);
+  }, []);
 
   useEffect(() => { registerFocusAt(focusAt); }, [registerFocusAt, focusAt]);
 
-  // ── Shared cursor-move helper ─────────────────────────────────────────────
-  // currentVal is always padded to correctLen, so pos is always valid.
   const moveCursor = useCallback((pos: number) => {
     inputRef.current?.setSelectionRange(pos, pos);
     setCursorPos(pos);
   }, []);
 
-  // ── All keyboard handling in one place ───────────────────────────────────
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       const pos = cursorRef.current;
-      // Always work with the padded, fixed-length slots string so that no
-      // character ever shifts — edits affect only the slot at the cursor.
-      const s = slotsRef.current;
+      const s   = slotsRef.current;
 
-      // Space — if word is fully filled, jump to next word (natural typing rhythm);
-      // otherwise advance the visual cursor one slot at a time.
       if (e.key === " ") {
         e.preventDefault();
         if (!s.includes(" ")) { onArrowNext(); return; }
         const next = pos + 1;
-        if (next > correctLen) { onArrowNext(); }
-        else { moveCursor(next); }
+        if (next > correctLen) { onArrowNext(); } else { moveCursor(next); }
         return;
       }
 
-      // ArrowLeft — move left or jump to prev word
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        if (pos > 0) { moveCursor(pos - 1); }
-        else { onArrowPrev(); }
+        if (pos > 0) { moveCursor(pos - 1); } else { onArrowPrev(); }
         return;
       }
 
-      // ArrowRight — move right or jump to next word
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        if (pos < correctLen) { moveCursor(pos + 1); }
-        else { onArrowNext(); }
+        if (pos < correctLen) { moveCursor(pos + 1); } else { onArrowNext(); }
         return;
       }
 
-      // Backspace — clear slot BEFORE cursor (no shift); at pos 0 → prev word
       if (e.key === "Backspace") {
         e.preventDefault();
         if (pos > 0) {
-          const newSlots = s.slice(0, pos - 1) + " " + s.slice(pos);
-          onChange(newSlots);
+          onChange(s.slice(0, pos - 1) + " " + s.slice(pos));
           moveCursor(pos - 1);
-        } else {
-          onBackspacePrev();
-        }
+        } else { onBackspacePrev(); }
         return;
       }
 
-      // Delete — clear slot AT cursor (no shift)
       if (e.key === "Delete") {
         e.preventDefault();
-        if (pos < correctLen) {
-          const newSlots = s.slice(0, pos) + " " + s.slice(pos + 1);
-          onChange(newSlots);
-          // cursor stays at same position
-        }
+        if (pos < correctLen) onChange(s.slice(0, pos) + " " + s.slice(pos + 1));
         return;
       }
 
-      // Printable chars — overwrite slot at cursor, advance cursor by 1
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         if (pos >= correctLen) return;
@@ -218,28 +189,23 @@ function WordInput({
   return (
     <span style={{ display: "inline-block", verticalAlign: "baseline", whiteSpace: "nowrap" }}>
       {letters.map((char, i) => {
-        const typed    = slots[i];
-        const empty    = typed === " ";
+        const typed     = slots[i];
+        const empty     = typed === " ";
         const isCorrect = !empty && typed.toLowerCase() === char.toLowerCase();
         const isWrong   = !empty && !isCorrect;
         const color = isCorrect ? "#2563eb" : isWrong ? "#dc2626" : "#9ca3af";
 
         return (
           <Fragment key={i}>
-            {/* Vertical caret sits BEFORE slot i when cursorPos === i */}
             {focused && cursorPos === i && <Caret />}
-
             <span
               onMouseDown={(e) => { e.preventDefault(); focusAt(i); }}
               style={{
                 display: "inline-block",
                 verticalAlign: "baseline",
-                // 1ch in a monospace font = exactly one character width.
-                // This guarantees uniform slot size for W, m, i, l, etc.
                 fontFamily: MONO,
                 width: "1ch",
                 textAlign: "center",
-                // Small gap between slots so they read as distinct squares
                 marginRight: i < letters.length - 1 ? "0.15em" : 0,
                 color,
                 cursor: "text",
@@ -251,16 +217,13 @@ function WordInput({
           </Fragment>
         );
       })}
-
-      {/* Caret after the last slot */}
       {focused && cursorPos === correct.length && <Caret />}
 
-      {/* Invisible input — captures all keystrokes */}
       <input
         ref={(el) => { inputRef.current = el; registerRef(el); }}
         type="text"
         value={slots}
-        onChange={() => {}} // controlled; all input handled in onKeyDown
+        onChange={() => {}}
         onKeyDown={handleKeyDown}
         onFocus={(e) => { setCursorPos(e.target.selectionStart ?? slots.length); }}
         maxLength={correctLen}
@@ -293,9 +256,15 @@ function SelectField({
           onChange={(e) => onChange(e.target.value)}
           className="w-full appearance-none rounded-xl border border-stone-200 bg-white px-4 py-2.5 pr-10 text-sm font-medium text-stone-800 shadow-sm transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 cursor-pointer"
         >
-          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400" />
+        <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+          <svg className="h-4 w-4 text-stone-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+          </svg>
+        </div>
       </div>
     </div>
   );
@@ -303,18 +272,16 @@ function SelectField({
 
 // ── Main app ──────────────────────────────────────────────────────────────────
 export default function MemorizationSlider() {
-  const [division, setDivision] = useState<Division>("junior");
-  const [week, setWeek]         = useState<string>("1");
-  const [version, setVersion]   = useState<BibleVersion>("esv");
-  const [level, setLevel]       = useState<number>(0);
-  const [isRevealing, setIsRevealing] = useState(false);
-  const [mounted, setMounted]   = useState(false);
-  const [userInputs, setUserInputs]   = useState<Record<number, string>>({});
-  const [celebrated, setCelebrated]   = useState(false);
+  const [division, setDivision]         = useState<Division>("senior");
+  const [selectedPassage, setSelected]  = useState<string>("1-navigate");
+  const [version, setVersion]           = useState<BibleVersion>("esv");
+  const [level, setLevel]               = useState<number>(0);
+  const [isRevealing, setIsRevealing]   = useState(false);
+  const [mounted, setMounted]           = useState(false);
+  const [userInputs, setUserInputs]     = useState<Record<number, string>>({});
+  const [celebrated, setCelebrated]     = useState(false);
 
-  // Per-word hidden input elements (for backspace-prev / focus)
   const inputRefs   = useRef<Record<number, HTMLInputElement | null>>({});
-  // Per-word focusAt(pos) functions exposed by each WordInput
   const focusAtRefs = useRef<Record<number, (pos: number) => void>>({});
 
   useEffect(() => {
@@ -322,32 +289,50 @@ export default function MemorizationSlider() {
     try {
       const prefs = JSON.parse(localStorage.getItem("bibleBeePrefs") ?? "{}");
       if (prefs.division) setDivision(prefs.division);
-      if (prefs.week)     setWeek(prefs.week);
+      if (prefs.passage)  setSelected(prefs.passage);
       if (prefs.version)  setVersion(prefs.version);
     } catch {}
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    localStorage.setItem("bibleBeePrefs", JSON.stringify({ division, week, version }));
-  }, [division, week, version, mounted]);
+    localStorage.setItem("bibleBeePrefs", JSON.stringify({ division, passage: selectedPassage, version }));
+  }, [division, selectedPassage, version, mounted]);
 
-  const divisionData = versesData[division] as Record<string, WeekData>;
-  const weeks        = Object.keys(divisionData).sort((a, b) => Number(a) - Number(b));
-  const activeWeek   = weeks.includes(week) ? week : weeks[0];
-  const weekData     = divisionData[activeWeek];
-  const verseText    = weekData[version];
-  const reference    = weekData.reference;
+  // ── Derive unit + passageType from "1-navigate" style key ────────────────
+  const [unitStr, passageType] = selectedPassage.split("-") as [string, PassageType];
+  const divisionData = versesData[division] as Record<string, UnitData>;
+  const units        = Object.keys(divisionData).sort((a, b) => Number(a) - Number(b));
+  const activeUnit   = units.includes(unitStr) ? unitStr : units[0];
+  const unitData     = divisionData[activeUnit];
+  const passageData  = (passageType === "explore" && unitData.explore)
+    ? unitData.explore
+    : unitData.navigate;
 
-  const tokens     = verseText.split(" ");
-  const cutoff     = getCutoff(tokens.length, level);
-  const hiddenSet  = new Set<number>(Array.from({ length: cutoff }, (_, i) => i));
+  const verseText = passageData[version];
+  const reference = passageData.reference;
+
+  // ── Passage dropdown options ──────────────────────────────────────────────
+  const passageOptions = units.flatMap((u) => {
+    const ud = divisionData[u];
+    const opts = [{ value: `${u}-navigate`, label: `Unit ${u} — ${ud.navigate.reference} (Navigate)` }];
+    if (ud.explore) opts.push({ value: `${u}-explore`, label: `Unit ${u} — ${ud.explore.reference} (Explore)` });
+    return opts;
+  });
+
+  // Normalize selectedPassage in case division changed and old key is invalid
+  const activePassage = passageOptions.find((o) => o.value === selectedPassage)
+    ? selectedPassage
+    : passageOptions[0]?.value ?? "1-navigate";
+
+  const tokens    = verseText ? verseText.split(" ") : [];
+  const cutoff    = getCutoff(tokens.length, level);
+  const hiddenSet = new Set<number>(Array.from({ length: cutoff }, (_, i) => i));
   const hiddenList = [...hiddenSet].sort((a, b) => a - b);
 
   const wordCorrect = useCallback(
     (idx: number) => {
       const { core } = splitToken(tokens[idx]);
-      // value is padded to core.length with spaces; a space means the slot is empty
       const typed = (userInputs[idx] ?? "").padEnd(core.length, " ");
       return typed.split("").every((ch, ci) => ch !== " " && ch.toLowerCase() === core[ci].toLowerCase());
     },
@@ -370,23 +355,24 @@ export default function MemorizationSlider() {
   }, []);
 
   const handleDivisionChange = useCallback((v: string) => {
-    setDivision(v as Division);
+    const div = v as Division;
+    setDivision(div);
     setLevel(0);
     resetInputs();
-    const nw = Object.keys(versesData[v as Division] as Record<string, WeekData>)
-      .sort((a, b) => Number(a) - Number(b));
-    setWeek(nw[0]);
+    // Jump to first passage of new division
+    const ud = versesData[div] as Record<string, UnitData>;
+    const firstUnit = Object.keys(ud).sort((a, b) => Number(a) - Number(b))[0];
+    setSelected(`${firstUnit}-navigate`);
   }, [resetInputs]);
 
-  const handleWeekChange    = useCallback((v: string) => { setWeek(v); setLevel(0); resetInputs(); }, [resetInputs]);
-  const handleVersionChange = useCallback((v: string) => { setVersion(v as BibleVersion); setLevel(0); resetInputs(); }, [resetInputs]);
-  const handleLevelChange   = useCallback((l: number) => { setLevel(l); resetInputs(); }, [resetInputs]);
-  const handleWordInput     = useCallback((index: number, value: string) => {
+  const handlePassageChange  = useCallback((v: string) => { setSelected(v); setLevel(0); resetInputs(); }, [resetInputs]);
+  const handleVersionChange  = useCallback((v: string) => { setVersion(v as BibleVersion); setLevel(0); resetInputs(); }, [resetInputs]);
+  const handleLevelChange    = useCallback((l: number) => { setLevel(l); resetInputs(); }, [resetInputs]);
+  const handleWordInput      = useCallback((index: number, value: string) => {
     setUserInputs((prev) => ({ ...prev, [index]: value }));
     setCelebrated(false);
   }, []);
 
-  // Jump forward to next hidden word (auto-advance on completion or Space)
   const handleArrowNext = useCallback(
     (index: number) => {
       const pos  = hiddenList.indexOf(index);
@@ -397,7 +383,6 @@ export default function MemorizationSlider() {
     [hiddenList.join(",")]
   );
 
-  // Jump backward to prev hidden word (Backspace-at-start or ArrowLeft-at-start)
   const handleArrowPrev = useCallback(
     (index: number) => {
       const pos  = hiddenList.indexOf(index);
@@ -411,10 +396,9 @@ export default function MemorizationSlider() {
     [hiddenList.join(","), tokens.join(" ")]
   );
 
-  const weekOptions = weeks.map((w) => ({
-    value: w,
-    label: `Week ${w} — ${divisionData[w].reference}`,
-  }));
+  const passageLabel = passageType === "explore"
+    ? "Explore Memory Passage"
+    : "Navigate Memory Passage";
 
   if (!mounted) return null;
 
@@ -444,12 +428,12 @@ export default function MemorizationSlider() {
         <main className="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 py-8 flex flex-col gap-6">
           {/* Selectors */}
           <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <SelectField label="Division" value={division} onChange={handleDivisionChange} options={DIVISIONS} />
-            <SelectField label="Week & Verse" value={activeWeek} onChange={handleWeekChange} options={weekOptions} />
-            <SelectField label="Bible Version" value={version} onChange={handleVersionChange} options={VERSIONS} />
+            <SelectField label="Division"      value={division}      onChange={handleDivisionChange} options={DIVISIONS} />
+            <SelectField label="Unit & Passage" value={activePassage} onChange={handlePassageChange}  options={passageOptions} />
+            <SelectField label="Bible Version" value={version}       onChange={handleVersionChange}  options={VERSIONS} />
           </section>
 
-          {/* Erasure Level slider */}
+          {/* Erasure Level */}
           <section className="rounded-2xl border border-stone-200 bg-white shadow-sm px-6 py-5">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -544,62 +528,68 @@ export default function MemorizationSlider() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">
                   {DIVISIONS.find((d) => d.value === division)?.label} ·{" "}
-                  {VERSIONS.find((v) => v.value === version)?.label}
+                  {VERSIONS.find((v) => v.value === version)?.label} · {passageLabel}
                 </p>
                 <p className="text-lg font-semibold text-stone-800 mt-0.5">{reference}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-stone-400">Week</p>
-                <p className="text-2xl font-bold text-indigo-600">{activeWeek}</p>
+                <p className="text-xs text-stone-400">Unit</p>
+                <p className="text-2xl font-bold text-indigo-600">{activeUnit}</p>
               </div>
             </div>
 
             <div className="px-6 py-8">
-              <div
-                className="text-xl sm:text-2xl leading-loose text-stone-800"
-                style={{ fontFamily: "var(--font-lora), Georgia, serif", wordSpacing: "0.18em" }}
-              >
-                {tokens.map((token, i) => {
-                  const { pre, core, post } = splitToken(token);
-                  const isHidden = hiddenSet.has(i);
+              {verseText ? (
+                <div
+                  className="text-xl sm:text-2xl leading-loose text-stone-800"
+                  style={{ fontFamily: "var(--font-inter), Inter, sans-serif" }}
+                >
+                  {tokens.map((token, i) => {
+                    const { pre, core, post } = splitToken(token);
+                    const isHidden = hiddenSet.has(i);
 
-                  if (!isHidden) {
-                    return <span key={i}>{i > 0 ? " " : ""}{token}</span>;
-                  }
+                    if (!isHidden) {
+                      return <span key={i}>{i > 0 ? " " : ""}{token}</span>;
+                    }
 
-                  if (isRevealing) {
+                    if (isRevealing) {
+                      return (
+                        <span key={i}>
+                          {i > 0 ? " " : ""}
+                          {pre}
+                          <span className="text-indigo-500 font-medium">{core}</span>
+                          {post && <span style={{ marginLeft: "0.05em" }}>{post}</span>}
+                        </span>
+                      );
+                    }
+
                     return (
                       <span key={i}>
                         {i > 0 ? " " : ""}
                         {pre}
-                        <span className="text-indigo-500 font-medium">{core}</span>
-                        {post && <span style={{ marginLeft: "0.05em" }}>{post}</span>}
+                        <WordInput
+                          correct={core}
+                          value={userInputs[i] ?? ""}
+                          onChange={(v) => handleWordInput(i, v)}
+                          onComplete={() => handleArrowNext(i)}
+                          onBackspacePrev={() => handleArrowPrev(i)}
+                          onArrowPrev={() => handleArrowPrev(i)}
+                          onArrowNext={() => handleArrowNext(i)}
+                          registerRef={(el) => { inputRefs.current[i] = el; }}
+                          registerFocusAt={(fn) => { focusAtRefs.current[i] = fn; }}
+                        />
+                        {post && <span style={{ marginLeft: "0.08em" }}>{post}</span>}
                       </span>
                     );
-                  }
+                  })}
+                </div>
+              ) : (
+                <p className="text-stone-400 italic text-sm">
+                  Passage text not yet provided for this division. Please add it to data/verses.json.
+                </p>
+              )}
 
-                  return (
-                    <span key={i}>
-                      {i > 0 ? " " : ""}
-                      {pre}
-                      <WordInput
-                        correct={core}
-                        value={userInputs[i] ?? ""}
-                        onChange={(v) => handleWordInput(i, v)}
-                        onComplete={() => handleArrowNext(i)}
-                        onBackspacePrev={() => handleArrowPrev(i)}
-                        onArrowPrev={() => handleArrowPrev(i)}
-                        onArrowNext={() => handleArrowNext(i)}
-                        registerRef={(el) => { inputRefs.current[i] = el; }}
-                        registerFocusAt={(fn) => { focusAtRefs.current[i] = fn; }}
-                      />
-                      {post && <span style={{ marginLeft: "0.08em" }}>{post}</span>}
-                    </span>
-                  );
-                })}
-              </div>
-
-              {hiddenSet.size > 0 && (
+              {verseText && hiddenSet.size > 0 && (
                 <div className="mt-6 flex items-center gap-3">
                   <div className="flex-1 h-1.5 rounded-full bg-stone-100 overflow-hidden">
                     <div
@@ -635,19 +625,19 @@ export default function MemorizationSlider() {
           <section className="rounded-xl bg-indigo-50 border border-indigo-100 px-5 py-4">
             <p className="text-sm font-semibold text-indigo-800 mb-1">How to use</p>
             <ol className="text-sm text-indigo-700 space-y-1 list-decimal list-inside">
-              <li>Select your division, week, and Bible version above.</li>
-              <li>Set the slider to Level 1 and read the full verse until comfortable.</li>
+              <li>Select your division, unit &amp; passage, and Bible version above.</li>
+              <li>Set the slider to Level 1 and read the full passage until comfortable.</li>
               <li>Advance the slider — words from the beginning are replaced by letter slots.</li>
-              <li>Click any slot and type — each letter turns <span className="text-blue-600 font-semibold">blue</span> if correct or <span className="text-red-600 font-semibold">red</span> if wrong. Typing overwrites the slot at the cursor.</li>
-              <li>Use ← → arrows or Space to navigate freely across all slots. Backspace deletes and crosses word boundaries.</li>
-              <li>Hold <strong>Peek</strong> to see the full verse without losing progress.</li>
+              <li>Click any slot and type — each letter turns <span className="text-blue-600 font-semibold">blue</span> if correct or <span className="text-red-600 font-semibold">red</span> if wrong.</li>
+              <li>Press <strong>Space</strong> after a completed word to advance. Use ← → arrows to navigate freely.</li>
+              <li>Hold <strong>Peek</strong> to see the full passage without losing progress.</li>
             </ol>
           </section>
         </main>
 
         <footer className="border-t border-stone-200 py-6 text-center">
           <p className="text-xs text-stone-400">
-            Bible Bee Scripture Memorization &mdash; built with love for God&apos;s Word
+            National Bible Bee · Scripture Memorization Tool
           </p>
         </footer>
       </div>
