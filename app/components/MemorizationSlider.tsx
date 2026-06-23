@@ -99,10 +99,15 @@ function WordInput({
   const [focused, setFocused]   = useState(false);
   const [cursorPos, setCursorPos] = useState(0);
 
+  // Normalize value to a fixed-length padded string.
+  // Each index maps 1-to-1 with a slot; " " (space) means the slot is empty.
+  // This prevents characters shifting when deleting or inserting mid-word.
+  const slots = (value + " ".repeat(correct.length)).slice(0, correct.length);
+
   // Stable refs so callbacks never go stale
-  const valueRef     = useRef(value);   valueRef.current     = value;
-  const cursorRef    = useRef(cursorPos); cursorRef.current   = cursorPos;
-  const correctLen   = correct.length;
+  const slotsRef    = useRef(slots);   slotsRef.current    = slots;
+  const cursorRef   = useRef(cursorPos); cursorRef.current = cursorPos;
+  const correctLen  = correct.length;
 
   // ── Native focus tracking (reliable for programmatic .focus() calls) ──────
   useEffect(() => {
@@ -120,20 +125,19 @@ function WordInput({
     const el = inputRef.current;
     if (!el) return;
     el.focus();
-    // Input selection is clamped to typed length; visual cursor is unclamped
-    const inputPos = Math.min(pos, valueRef.current.length);
+    // With a padded string, length === correctLen always, so pos is always valid.
     setTimeout(() => {
-      el.setSelectionRange(inputPos, inputPos);
+      el.setSelectionRange(pos, pos);
       setCursorPos(pos);
     }, 0);
-  }, []); // stable — reads value through ref
+  }, []); // stable — reads slots through ref
 
   useEffect(() => { registerFocusAt(focusAt); }, [registerFocusAt, focusAt]);
 
   // ── Shared cursor-move helper ─────────────────────────────────────────────
-  const moveCursor = useCallback((pos: number, currentVal: string) => {
-    const inputPos = Math.min(pos, currentVal.length);
-    inputRef.current?.setSelectionRange(inputPos, inputPos);
+  // currentVal is always padded to correctLen, so pos is always valid.
+  const moveCursor = useCallback((pos: number) => {
+    inputRef.current?.setSelectionRange(pos, pos);
     setCursorPos(pos);
   }, []);
 
@@ -141,21 +145,23 @@ function WordInput({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       const pos = cursorRef.current;
-      const val = valueRef.current;
+      // Always work with the padded, fixed-length slots string so that no
+      // character ever shifts — edits affect only the slot at the cursor.
+      const s = slotsRef.current;
 
       // Space — advance visual cursor; wrap to next word at end
       if (e.key === " ") {
         e.preventDefault();
         const next = pos + 1;
         if (next > correctLen) { onArrowNext(); }
-        else { moveCursor(next, val); }
+        else { moveCursor(next); }
         return;
       }
 
       // ArrowLeft — move left or jump to prev word
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        if (pos > 0) { moveCursor(pos - 1, val); }
+        if (pos > 0) { moveCursor(pos - 1); }
         else { onArrowPrev(); }
         return;
       }
@@ -163,61 +169,49 @@ function WordInput({
       // ArrowRight — move right or jump to next word
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        if (pos < correctLen) { moveCursor(pos + 1, val); }
+        if (pos < correctLen) { moveCursor(pos + 1); }
         else { onArrowNext(); }
         return;
       }
 
-      // Backspace — delete char before cursor or go to prev word
+      // Backspace — clear slot BEFORE cursor (no shift); at pos 0 → prev word
       if (e.key === "Backspace") {
         e.preventDefault();
         if (pos > 0) {
-          const newVal = val.slice(0, pos - 1) + val.slice(pos);
-          onChange(newVal);
-          moveCursor(pos - 1, newVal);
+          const newSlots = s.slice(0, pos - 1) + " " + s.slice(pos);
+          onChange(newSlots);
+          moveCursor(pos - 1);
         } else {
           onBackspacePrev();
         }
         return;
       }
 
-      // Delete — remove char at cursor
+      // Delete — clear slot AT cursor (no shift)
       if (e.key === "Delete") {
         e.preventDefault();
-        if (pos < val.length) {
-          const newVal = val.slice(0, pos) + val.slice(pos + 1);
-          onChange(newVal);
-          moveCursor(pos, newVal);
+        if (pos < correctLen) {
+          const newSlots = s.slice(0, pos) + " " + s.slice(pos + 1);
+          onChange(newSlots);
+          // cursor stays at same position
         }
         return;
       }
 
-      // Printable chars — OVERWRITE mode (replaces char at cursor position)
+      // Printable chars — overwrite slot at cursor, advance cursor by 1
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        if (pos >= correctLen) return; // no slot to overwrite at end
-        const newVal = (val.slice(0, pos) + e.key + val.slice(pos + 1)).slice(0, correctLen);
-        onChange(newVal);
+        if (pos >= correctLen) return;
+        const newSlots = s.slice(0, pos) + e.key + s.slice(pos + 1);
+        onChange(newSlots);
         const nextPos = Math.min(pos + 1, correctLen);
-        moveCursor(nextPos, newVal);
-        if (newVal.length === correctLen) setTimeout(onComplete, 60);
+        moveCursor(nextPos);
+        // Complete when every slot is non-empty
+        if (!newSlots.includes(" ")) setTimeout(onComplete, 60);
         return;
       }
     },
     [correctLen, onChange, onComplete, onBackspacePrev, onArrowPrev, onArrowNext, moveCursor]
-  );
-
-  // onChange catches mobile soft-keyboard input (not intercepted by onKeyDown)
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const cleaned = e.target.value.replace(/ /g, "");
-      const next = cleaned.slice(0, correctLen);
-      onChange(next);
-      const pos = e.target.selectionStart ?? next.length;
-      setCursorPos(pos);
-      if (next.length === correctLen) setTimeout(onComplete, 60);
-    },
-    [correctLen, onChange, onComplete]
   );
 
   const letters = correct.split("");
@@ -225,8 +219,8 @@ function WordInput({
   return (
     <span style={{ display: "inline-block", verticalAlign: "baseline", whiteSpace: "nowrap" }}>
       {letters.map((char, i) => {
-        const typed    = value[i] ?? "";
-        const empty    = typed === "";
+        const typed    = slots[i];
+        const empty    = typed === " ";
         const isCorrect = !empty && typed.toLowerCase() === char.toLowerCase();
         const isWrong   = !empty && !isCorrect;
         const color = isCorrect ? "#2563eb" : isWrong ? "#dc2626" : "#9ca3af";
@@ -266,10 +260,10 @@ function WordInput({
       <input
         ref={(el) => { inputRef.current = el; registerRef(el); }}
         type="text"
-        value={value}
-        onChange={handleChange}
+        value={slots}
+        onChange={() => {}} // controlled; all input handled in onKeyDown
         onKeyDown={handleKeyDown}
-        onFocus={(e) => { setCursorPos(e.target.selectionStart ?? value.length); }}
+        onFocus={(e) => { setCursorPos(e.target.selectionStart ?? slots.length); }}
         maxLength={correctLen}
         spellCheck={false}
         autoComplete="off"
@@ -354,9 +348,9 @@ export default function MemorizationSlider() {
   const wordCorrect = useCallback(
     (idx: number) => {
       const { core } = splitToken(tokens[idx]);
-      const typed    = userInputs[idx] ?? "";
-      return typed.length === core.length &&
-        typed.split("").every((ch, ci) => ch.toLowerCase() === core[ci].toLowerCase());
+      // value is padded to core.length with spaces; a space means the slot is empty
+      const typed = (userInputs[idx] ?? "").padEnd(core.length, " ");
+      return typed.split("").every((ch, ci) => ch !== " " && ch.toLowerCase() === core[ci].toLowerCase());
     },
     [tokens, userInputs]
   );
