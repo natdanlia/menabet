@@ -149,9 +149,11 @@ function WordInput({
       // character ever shifts — edits affect only the slot at the cursor.
       const s = slotsRef.current;
 
-      // Space — advance visual cursor; wrap to next word at end
+      // Space — if word is fully filled, jump to next word (natural typing rhythm);
+      // otherwise advance the visual cursor one slot at a time.
       if (e.key === " ") {
         e.preventDefault();
+        if (!s.includes(" ")) { onArrowNext(); return; }
         const next = pos + 1;
         if (next > correctLen) { onArrowNext(); }
         else { moveCursor(next); }
@@ -206,8 +208,10 @@ function WordInput({
         onChange(newSlots);
         const nextPos = Math.min(pos + 1, correctLen);
         moveCursor(nextPos);
-        // Complete when every slot is non-empty
-        if (!newSlots.includes(" ")) setTimeout(onComplete, 60);
+        // Auto-advance only when the user types the last slot sequentially.
+        // Mid-word edits (pos < correctLen - 1) never jump to the next word,
+        // regardless of whether the word is now fully filled.
+        if (pos === correctLen - 1 && !newSlots.includes(" ")) setTimeout(onComplete, 60);
         return;
       }
     },
